@@ -1,0 +1,22 @@
+{
+    "python.autoComplete.extraPaths": [
+        "/home/dev/Flytbase_Tasks/install/task_6/lib/python3.10/site-packages",
+        "/home/dev/Flytbase_Tasks/install/task_5/lib/python3.10/site-packages",
+        "/home/dev/Flytbase_Tasks/install/task_4/lib/python3.10/site-packages",
+        "/home/dev/Flytbase_Tasks/install/task_3/lib/python3.10/site-packages",
+        "/home/dev/Flytbase_Tasks/install/task_2/lib/python3.10/site-packages",
+        "/home/dev/Flytbase_Tasks/install/task_1/lib/python3.10/site-packages",
+        "/opt/ros/humble/lib/python3.10/site-packages",
+        "/opt/ros/humble/local/lib/python3.10/dist-packages"
+    ],
+    "python.analysis.extraPaths": [
+        "/home/dev/Flytbase_Tasks/install/task_6/lib/python3.10/site-packages",
+        "/home/dev/Flytbase_Tasks/install/task_5/lib/python3.10/site-packages",
+        "/home/dev/Flytbase_Tasks/install/task_4/lib/python3.10/site-packages",
+        "/home/dev/Flytbase_Tasks/install/task_3/lib/python3.10/site-packages",
+        "/home/dev/Flytbase_Tasks/install/task_2/lib/python3.10/site-packages",
+        "/home/dev/Flytbase_Tasks/install/task_1/lib/python3.10/site-packages",
+        "/opt/ros/humble/lib/python3.10/site-packages",
+        "/opt/ros/humble/local/lib/python3.10/dist-packages"
+    ]
+}
