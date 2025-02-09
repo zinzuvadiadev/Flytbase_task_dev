@@ -97,7 +97,7 @@ class TurtleGridController(Node):
 
     def rotate_to_angle(self, target_deg):
         """
-        Rotate the turtle to an absolute heading (in degrees) using proportional control.
+        Rotate the turtle using proportional control.
         """
         target_rad = target_deg * pi / 180.0
 
@@ -124,10 +124,9 @@ class TurtleGridController(Node):
     def drive_straight(self, goal_x, goal_y):
         """
         Drives the turtle in a straight line toward the goal.
-        First, it rotates to face the target precisely.
-        Then, it drives straight (with angular corrections disabled) with capped speed.
+        First, turtle rotates to face target point.
+        After this turtle navigates to the point.
         """
-        # Wait for an initial pose
         while rclpy.ok() and self.pose is None:
             rclpy.spin_once(self, timeout_sec=0.1)
 
@@ -136,7 +135,6 @@ class TurtleGridController(Node):
         self.get_logger().info(f"Aligning to {desired_angle * 180 / pi:.2f}° for goal ({goal_x}, {goal_y})")
         self.rotate_to_angle(desired_angle * 180.0 / pi)
 
-        # Now drive straight with angular.z = 0
         start_time = time.time()
         while rclpy.ok():
             distance_error = sqrt((goal_x - self.pose.x)**2 + (goal_y - self.pose.y)**2)
@@ -144,7 +142,7 @@ class TurtleGridController(Node):
                 break
 
             twist = Twist()
-            # Proportional control for linear speed, with maximum speed cap
+            # Proportional control for linear speed
             desired_speed = self.Kp_linear * distance_error
             if desired_speed > self.max_linear_speed:
                 desired_speed = self.max_linear_speed
@@ -162,14 +160,14 @@ class TurtleGridController(Node):
 
     def grid(self):
         """
-        Follow the grid pattern by visiting each corner and then rotating to the desired heading.
+        Follow the grid corners and then rotating to the desired point.
         """
         for corner in self.grid_corners:
             goal_x, goal_y, angle_deg = corner
             self.drive_straight(goal_x, goal_y)
             self.get_logger().info(f"Rotating to {angle_deg}°")
             self.rotate_to_angle(angle_deg)
-        self.get_logger().info("Completed grid pattern")
+        self.get_logger().info("Grid created")
         rclpy.shutdown()
 
 def main(args=None):

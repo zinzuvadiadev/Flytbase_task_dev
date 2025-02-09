@@ -1,14 +1,12 @@
 #!/usr/bin/env python3
 """
-Police Turtle Node (PT) for ROS 2
-
 This spawns a Police Turtle (PT) that tries to catch Robber Turtle (RT).
-RT should already be running (using the node from Goal 3) and moving in a circle,
+RT should already be running using task_3,
 publishing real pose on the `/rt_real_pose` topic on every 5 sec.
 
-PT spawns 10 seconds after RT is launched, from a random location, and then
-chases RT. PT moves at a higher speed than RT, and when the distance between PT
-and RT is ≤ 3 units, the chase is considered complete.
+PT starts after 10 seconds from a random location and then
+chases RT, PT moves at a higher speed than RT, and when the distance between PT
+and RT is ≤ 3 units, the chase is sucessfull.
 """
 
 import rclpy
@@ -24,27 +22,23 @@ import time
 class PoliceTurtle(Node):
     def __init__(self):
         super().__init__('police_turtle')
-        self.get_logger().info("Police Turtle node started.")
+        self.get_logger().info("PT node started.")
 
-        # Wait 10 seconds before spawning PT (to let RT launch first)
-        self.get_logger().info("Waiting 10 seconds before spawning Police Turtle...")
+        # Wait 10 seconds before spawning PT
+        self.get_logger().info("Waiting 10 seconds before spawning PT")
         time.sleep(10)
-
-        # Spawn Police Turtle (PT) as "turtle2" at a random location
         self.spawn_police_turtle()
 
-        # Publisher for PT's velocity (PT will be controlled via /turtle2/cmd_vel)
+        # Publisher for PT's velocity 
         self.cmd_pub = self.create_publisher(Twist, '/turtle2/cmd_vel', 10)
-        # Subscribe to PT's own pose
         self.create_subscription(Pose, '/turtle2/pose', self.pt_pose_callback, 10)
-        # Subscribe to RT's real pose published on /rt_real_pose
         self.create_subscription(Pose, '/rt_real_pose', self.rt_pose_callback, 10)
 
-        # Storage for the current poses
+        # Storage for the current pose
         self.pt_pose = None
         self.rt_pose = None
 
-        # Control parameters (PT moves faster than RT)
+        # Control parameters
         self.Kp_linear = 2.0    # Proportional gain for linear velocity
         self.Kp_angular = 4.0   # Proportional gain for angular velocity
         self.max_linear_speed = 3.0   # Maximum linear speed for PT
@@ -56,20 +50,16 @@ class PoliceTurtle(Node):
         self.max_accel_angular = 1.5
         self.max_decel_angular = 1.5
 
-        # For gradual velocity updates
         self.current_vel = Twist()
         self.last_time = time.time()
 
-        # Timer for the control loop (20 Hz)
         self.control_timer = self.create_timer(0.05, self.control_loop)
 
     def spawn_police_turtle(self):
         """Spawn the Police Turtle (PT) using the turtlesim spawn service."""
         client = self.create_client(Spawn, 'spawn')
-        while not client.wait_for_service(timeout_sec=1.0):
-            self.get_logger().info("Waiting for spawn service for Police Turtle...")
         req = Spawn.Request()
-        # Random spawn coordinates (within the typical turtlesim window)
+        # Random spawn coordinates
         req.x = random.uniform(1.0, 10.0)
         req.y = random.uniform(1.0, 10.0)
         req.theta = random.uniform(0, 2 * math.pi)
@@ -77,21 +67,21 @@ class PoliceTurtle(Node):
         future = client.call_async(req)
         rclpy.spin_until_future_complete(self, future)
         if future.result() is not None:
-            self.get_logger().info(f"Police Turtle spawned at ({req.x:.2f}, {req.y:.2f})")
+            self.get_logger().info(f"PT spawned at ({req.x:.2f}, {req.y:.2f})")
         else:
-            self.get_logger().error("Failed to spawn Police Turtle")
+            self.get_logger().error("Failed to spawn PT")
 
     def pt_pose_callback(self, msg):
-        """Callback to update PT's own pose."""
+        """Callback to update PT's pose."""
         self.pt_pose = msg
 
     def rt_pose_callback(self, msg):
-        """Callback to update RT's real pose (from /rt_real_pose)."""
+        """Callback to update RT's real pose."""
         self.rt_pose = msg
 
     def update_velocity(self, current, desired, dt, max_accel, max_decel):
         """
-        Gradually adjust a velocity component toward the desired value while limiting acceleration.
+        Gradually adjust a velocity toward the desired value while limiting acceleration.
         """
         diff = desired - current
         if diff > 0:
@@ -106,7 +96,7 @@ class PoliceTurtle(Node):
 
     def step_vel(self, desired_vel):
         """
-        Update the current velocity gradually toward the desired velocity command.
+        Update the current velocity to req velocity command.
         """
         current_time = time.time()
         dt = current_time - self.last_time
@@ -127,8 +117,8 @@ class PoliceTurtle(Node):
     def control_loop(self):
         """
         Control loop that computes the chase command:
-          - Uses the latest RT pose (from /rt_real_pose) and PT's pose.
-          - If the distance between PT and RT is ≤ 3 units, stops the chase.
+          - Uses the latest RT pose and PT's pose.
+          - If the distance between PT and RT is ≤ 3 units, chase is complete.
           - Otherwise, computes desired linear and angular velocities and publishes them.
         """
         if self.pt_pose is None or self.rt_pose is None:
@@ -141,23 +131,23 @@ class PoliceTurtle(Node):
         self.get_logger().info(f"Distance to RT: {distance:.2f}")
 
         if distance <= 3.0:
-            self.get_logger().info("Chase complete! Police Turtle has caught the Robber Turtle.")
+            self.get_logger().info("Chase successful PT has chased RT") 
             stop = Twist()
             self.cmd_pub.publish(stop)
-            self.control_timer.cancel()  # Stop the control loop
+            self.control_timer.cancel()  # Stop the loop
             return
 
-        # Compute the desired heading from PT to RT
+        # Calculate the desired angle from PT to RT
         desired_angle = math.atan2(dy, dx)
-        # Compute the angular error (normalize to [-pi, pi])
+        # Calculate the angular error (normalize to [-pi, pi])
         angle_error = desired_angle - self.pt_pose.theta
         angle_error = math.atan2(math.sin(angle_error), math.cos(angle_error))
 
-        # Compute desired velocities using proportional control
+        # Calculate req velocities using proportional control
         desired_linear_vel = self.Kp_linear * distance
         desired_angular_vel = self.Kp_angular * angle_error
 
-        # Cap the desired speeds
+        # Cap the req speeds
         desired_linear_vel = min(desired_linear_vel, self.max_linear_speed)
         desired_angular_vel = max(min(desired_angular_vel, self.max_angular_speed), -self.max_angular_speed)
 
@@ -173,7 +163,6 @@ def main(args=None):
     rclpy.spin(police_node)
     police_node.destroy_node()
     rclpy.shutdown()
-
 
 if __name__ == '__main__':
     main()

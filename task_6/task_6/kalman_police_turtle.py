@@ -35,7 +35,7 @@ class ChaseTurtle(Node):
         self.spawn_turtle(5.0, 5.0, 0.0)
 
     def spawn_turtle(self, x, y, theta):
-        """Spawns a new turtle at (x, y) with heading theta."""
+        """Spawns a new turtle at (x, y)."""
         client = self.create_client(Spawn, '/spawn')
 
         while not client.wait_for_service(timeout_sec=1.0):
@@ -48,18 +48,9 @@ class ChaseTurtle(Node):
         request.name = "turtle2"
 
         future = client.call_async(request)
-        future.add_done_callback(self.spawn_callback)
-
-    def spawn_callback(self, future):
-        """Handles the response from the spawn service."""
-        try:
-            response = future.result()
-            self.get_logger().info(f"Spawned turtle: {response.name}")
-        except Exception as e:
-            self.get_logger().error(f"Failed to spawn turtle: {str(e)}")
-
+        
     def rt_noisy_pose_callback(self, msg):
-        """Callback for RT's noisy pose (received every 5 sec)."""
+        """Callback for RT's noisy pose(every 5s)."""
         self.rt_noisy_pose = np.array([msg.x,msg.y,msg.theta])
         self.noisy_positions.append(self.rt_noisy_pose)
 

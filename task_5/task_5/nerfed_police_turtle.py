@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 """
-Police Turtle Slow Node (PT) for ROS 2
-
-- The Robber Turtle (RT) moves in a circle and publishes its real pose on `/rt_real_pose`.
-- PT spawns 10 seconds later at a random location.
+PT nerfed mode
+- RT moves in a circle and publishes its pose on `/rt_real_pose`.
+- PT spawns 10 seconds after running the file at a random location.
 - PT moves at half the speed of RT.
 - The chase is complete when PT is ≤ 3.0 units from RT.
 
@@ -56,11 +55,8 @@ class PoliceTurtleSlow(Node):
         self.control_timer = self.create_timer(0.05, self.control_loop)
         
     def spawn_police_turtle(self):
-        """Spawns Police Turtle (PT) at a random location using the turtlesim spawn service."""
+        """Spawns PT at a random location using the turtlesim spawn service."""
         client = self.create_client(Spawn, 'spawn')
-        while not client.wait_for_service(timeout_sec=1.0):
-            self.get_logger().info("Waiting for spawn service for Police Turtle...")
-        
         req = Spawn.Request()
         req.x = random.uniform(1.0, 10.0)
         req.y = random.uniform(1.0, 10.0)
@@ -71,16 +67,16 @@ class PoliceTurtleSlow(Node):
         rclpy.spin_until_future_complete(self, future)
         
         if future.result() is not None:
-            self.get_logger().info(f"Police Turtle spawned at ({req.x:.2f}, {req.y:.2f})")
+            self.get_logger().info(f"PT spawned at ({req.x:.2f}, {req.y:.2f})")
         else:
-            self.get_logger().error("Failed to spawn Police Turtle")
+            self.get_logger().error("Failed to spawn Police")
     
     def pt_pose_callback(self, msg):
-        """Updates PT’s current pose."""
+        """Updates PT's current pose."""
         self.pt_pose = msg
         
     def rt_pose_callback(self, msg):
-        """Updates RT’s (Robber Turtle’s) current pose from `/rt_real_pose`."""
+        """Updates RT's current pose from `/rt_real_pose`."""
         self.rt_pose = msg
         
     def update_velocity(self, current, desired, dt, max_accel, max_decel):
@@ -92,7 +88,7 @@ class PoliceTurtleSlow(Node):
         return current + max(min(diff, max_step), -max_step)
     
     def step_vel(self, desired_vel):
-        """Smoothly adjusts PT’s velocity toward the desired velocity."""
+        """Smoothly adjusts PT's velocity toward the desired velocity."""
         current_time = time.time()
         dt = current_time - self.last_time
         self.last_time = current_time
@@ -146,7 +142,7 @@ class PoliceTurtleSlow(Node):
         # Check if PT has caught RT
         d_rt = math.sqrt((x_r - x_p)**2 + (y_r - y_p)**2)
         if d_rt <= 3.0:
-            self.get_logger().info("Chase complete! Police Turtle caught the Robber Turtle.")
+            self.get_logger().info("Chase successful PT has chased RT")
             self.cmd_pub.publish(Twist())  # Stop movement
             self.control_timer.cancel()
             return
@@ -169,7 +165,7 @@ class PoliceTurtleSlow(Node):
         self.step_vel(desired_twist)
         self.get_logger().info(
             f"Intercept T: {T:.2f}, predicted intercept: ({x_int:.2f}, {y_int:.2f}), "
-            f"PT->RT distance: {d_rt:.2f}"
+            f"PT-RT distance: {d_rt:.2f}"
         )
 
 def main(args=None):
