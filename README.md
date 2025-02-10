@@ -209,7 +209,7 @@ Make sure that the radius of the circle is greater than 35 units which will allo
 Open a new Terminal and run the following commands for launching a node that will chase the Robber Turtle(RT) from Goal:3.
 ```sh
 source install/setup.bash
-ros2 run task_5 task_5
+ros2 run task_6 task_6
 ```
 The Police Turtle(PT), will start chasing RT on basis of the gausian noise pose published every 5 secs on /rt_noisy_pose after 10 secs.
 
