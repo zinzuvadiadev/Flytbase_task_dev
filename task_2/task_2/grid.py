@@ -2,13 +2,15 @@
 import rclpy
 from rclpy.node import Node
 from geometry_msgs.msg import Twist
-from turtlesim.msg import Pose
+from turtlesim_msgs.msg import Pose
 from math import sqrt, atan2, pi
 import time
 
 class TurtleGridController(Node):
     def __init__(self):
         super().__init__('turtle_grid_controller')
+        self.get_logger().info("Initializing TurtleGridController Node...")
+
         self.vel_pub = self.create_publisher(Twist, '/turtle1/cmd_vel', 10)
         self.pose_sub = self.create_subscription(Pose, '/turtle1/pose', self.pose_callback, 10)
         self.pose = None
@@ -22,7 +24,7 @@ class TurtleGridController(Node):
         self.max_angular_speed = 1.0   # Reduced maximum angular speed
 
         # Acceleration limits (m/s² for linear, rad/s² for angular)
-        self.max_accel_linear = 1.2      # Acceleration remains the same
+        self.max_accel_linear = 1.8        # Acceleration remains the same
         self.max_decel_linear = 2.0      # Increase deceleration for faster stopping
         self.max_accel_angular = 1.2
         self.max_decel_angular = 1.2
@@ -31,7 +33,7 @@ class TurtleGridController(Node):
         self.current_vel = Twist()
         self.last_time = time.time()
 
-        # Grid corners: each tuple is (x, y, desired_heading_in_degrees)
+        # Grid corners:(x, y, desired_heading_in_degrees)
         self.grid_corners = [
             (1, 1, 0),
             (10, 1, 90),
@@ -39,22 +41,23 @@ class TurtleGridController(Node):
             (1,2,90),
             (1, 3, 0),
             (10, 3, 180),
-            (10,4,0),
-            (1,4,90),
-            (1, 5, 0),
-            (10, 5, 90),
-            (10, 6, 180),
-            (1, 6, 90),
-            (1, 7, 0),
-            (10, 7, 180),
-            (10, 8, 0),
-            (1, 8, 90),
-            (1, 9, 0),
+            (10,4, 90),
+            (1,4,180),
+            (1, 5, 90),
+            (10, 5, 0),
+            (10, 6, 90),
+            (1, 6, 180),
+            (1, 7, 90),
+            (10, 7, 0),
+            (10, 8, 90),
+            (1, 8, 180),
+            (1, 9, 90),
             (10, 9, 0)
         ]
 
     def pose_callback(self, msg):
         self.pose = msg
+        self.get_logger().info(f"Received Pose: x={msg.x:.2f}, y={msg.y:.2f}, theta={msg.theta:.2f}")
 
     def normalize_angle(self, angle):
         """Normalize angle to the range [-pi, pi]."""
@@ -94,6 +97,8 @@ class TurtleGridController(Node):
             self.max_accel_angular, self.max_decel_angular)
         self.current_vel = new_vel
         self.vel_pub.publish(new_vel)
+        self.get_logger().info(f"Publishing Velocity: Linear={new_vel.linear.x:.2f}, Angular={new_vel.angular.z:.2f}")
+
 
     def rotate_to_angle(self, target_deg):
         """
@@ -107,7 +112,7 @@ class TurtleGridController(Node):
 
         while rclpy.ok():
             angular_error = self.normalize_angle(target_rad - self.pose.theta)
-            if abs(angular_error) < 0.02:
+            if abs(angular_error) < 0.1:
                 break
             twist = Twist()
             cmd_ang = self.Kp_angular * angular_error
@@ -122,53 +127,47 @@ class TurtleGridController(Node):
         time.sleep(0.5)
 
     def drive_straight(self, goal_x, goal_y):
-        """
-        Drives the turtle in a straight line toward the goal.
-        First, turtle rotates to face target point.
-        After this turtle navigates to the point.
-        """
         while rclpy.ok() and self.pose is None:
             rclpy.spin_once(self, timeout_sec=0.1)
 
-        # Calculate the desired heading
         desired_angle = atan2(goal_y - self.pose.y, goal_x - self.pose.x)
-        self.get_logger().info(f"Aligning to {desired_angle * 180 / pi:.2f}° for goal ({goal_x}, {goal_y})")
         self.rotate_to_angle(desired_angle * 180.0 / pi)
 
         start_time = time.time()
         while rclpy.ok():
             distance_error = sqrt((goal_x - self.pose.x)**2 + (goal_y - self.pose.y)**2)
-            if distance_error < 0.05:
-                break
+
+            # DEBUG LOG
+            self.get_logger().info(f"Moving... Distance Error: {distance_error:.2f}")
+
+            if distance_error < 0.1:  
+                self.get_logger().info(f"Reached ({goal_x}, {goal_y})")
+                break  # Exit loop properly
 
             twist = Twist()
-            # Proportional control for linear speed
-            desired_speed = self.Kp_linear * distance_error
-            if desired_speed > self.max_linear_speed:
-                desired_speed = self.max_linear_speed
-            twist.linear.x = desired_speed
-            twist.angular.z = 0.0
+            desired_speed = min(self.Kp_linear * distance_error, self.max_linear_speed)
+            if distance_error < 0.2:  
+                desired_speed *= 0.5  
 
+            twist.linear.x = desired_speed
             self.step_vel(twist)
             rclpy.spin_once(self, timeout_sec=0.05)
-        # Stop the turtle once the goal is reached
+
         stop = Twist()
         self.vel_pub.publish(stop)
         time.sleep(0.5)
-        total_time = time.time() - start_time
-        self.get_logger().info(f"Reached goal ({goal_x}, {goal_y}) in {total_time:.2f} seconds")
 
     def grid(self):
-        """
-        Follow the grid corners and then rotating to the desired point.
-        """
-        for corner in self.grid_corners:
-            goal_x, goal_y, angle_deg = corner
+        for i, (goal_x, goal_y, angle_deg) in enumerate(self.grid_corners):
+            self.get_logger().info(f"Moving to {goal_x}, {goal_y} (Index: {i})")
+
             self.drive_straight(goal_x, goal_y)
+            
             self.get_logger().info(f"Rotating to {angle_deg}°")
             self.rotate_to_angle(angle_deg)
-        self.get_logger().info("Grid created")
-        rclpy.shutdown()
+
+        self.get_logger().info("Grid completed")
+
 
 def main(args=None):
     rclpy.init(args=args)

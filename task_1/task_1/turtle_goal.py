@@ -3,8 +3,8 @@ import time
 import random
 from rclpy.node import Node
 from geometry_msgs.msg import Twist
-from turtlesim.msg import Pose
-from turtlesim.srv import Spawn, Kill
+from turtlesim_msgs.msg import Pose
+from turtlesim_msgs.srv import Spawn, Kill
 import numpy as np
 
 class PIDController:
@@ -32,8 +32,8 @@ class TurtleController(Node):
         self.current_waypoint_index = 0
         
         # PID constants
-        self.lin_pid = PIDController(1.5, 0.01, 0.2)  # Tune these values
-        self.ang_pid = PIDController(4.0, 0.02, 0.3)
+        self.lin_pid = PIDController(1.33, 0.014, 0.22)  # Tune these values
+        self.ang_pid = PIDController(3.48, 0.022, 0.35)
         
         self.timer = self.create_timer(0.05, self.control_loop) 
         self.start_time = time.time()

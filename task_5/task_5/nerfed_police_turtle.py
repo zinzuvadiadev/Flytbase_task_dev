@@ -1,61 +1,52 @@
-#!/usr/bin/env python3
-"""
-PT nerfed mode
-- RT moves in a circle and publishes its pose on `/rt_real_pose`.
-- PT spawns 10 seconds after running the file at a random location.
-- PT moves at half the speed of RT.
-- The chase is complete when PT is ≤ 3.0 units from RT.
-
-"""
-
 import rclpy
 from rclpy.node import Node
-from turtlesim.msg import Pose
+from turtlesim_msgs.msg import Pose
 from geometry_msgs.msg import Twist
-from turtlesim.srv import Spawn
+from turtlesim_msgs.srv import Spawn, Kill
 import random
 import math
 import time
+import numpy as np
 
 class PoliceTurtleSlow(Node):
     def __init__(self):
         super().__init__('police_turtle_slow')
         self.get_logger().info("Police Turtle Slow node started.")
         
-        # Wait 10 seconds before spawning PT
-        self.get_logger().info("Waiting 10 seconds before spawning Police Turtle...")
-        time.sleep(10)
-        
-        # Spawn PT at a random location
+        time.sleep(10)  # Wait before spawning PT
         self.spawn_police_turtle()
         
-        # Publisher for PT's velocity commands
         self.cmd_pub = self.create_publisher(Twist, '/turtle2/cmd_vel', 10)
-        
-        # Subscribers for PT’s pose and RT’s pose
+        self.cmd_rt_pub = self.create_publisher(Twist, '/turtle1/cmd_vel', 10)
         self.create_subscription(Pose, '/turtle2/pose', self.pt_pose_callback, 10)
         self.create_subscription(Pose, '/rt_real_pose', self.rt_pose_callback, 10)
         
         self.pt_pose = None
-        self.rt_pose = None
+        self.rt_positions = []  # Store past RT positions
+        self.rt_speed = 0.0
+        self.circle_center = None
+        self.circle_radius = None
         
-        # PID Control parameters
         self.Kp_linear = 1.0
         self.Kp_angular = 4.0
         self.max_angular_speed = 2.0
+
+        self.pt_speed = 0.1
         
-        # Smooth acceleration/deceleration limits
-        self.max_accel_linear = 1.0
-        self.max_decel_linear = 1.5
-        self.max_accel_angular = 1.0
-        self.max_decel_angular = 1.0
-        
-        self.current_vel = Twist()
-        self.last_time = time.time()
         self.control_timer = self.create_timer(0.05, self.control_loop)
-        
+    
     def spawn_police_turtle(self):
-        """Spawns PT at a random location using the turtlesim spawn service."""
+        kill_client = self.create_client(Kill, 'kill')
+        if kill_client.wait_for_service(timeout_sec=2.0):
+            kill_req = Kill.Request()
+            kill_req.name = "turtle2"
+            future = kill_client.call_async(kill_req)
+            rclpy.spin_until_future_complete(self, future)
+            if future.result():
+                self.get_logger().info("Existing turtle2 killed successfully.")
+            else:
+                self.get_logger().info("No existing turtle2 found or failed to kill.")
+        
         client = self.create_client(Spawn, 'spawn')
         req = Spawn.Request()
         req.x = random.uniform(1.0, 10.0)
@@ -65,110 +56,84 @@ class PoliceTurtleSlow(Node):
         
         future = client.call_async(req)
         rclpy.spin_until_future_complete(self, future)
-        
-        if future.result() is not None:
+        if future.result():
             self.get_logger().info(f"PT spawned at ({req.x:.2f}, {req.y:.2f})")
         else:
-            self.get_logger().error("Failed to spawn Police")
+            self.get_logger().error("Failed to spawn PT")
     
     def pt_pose_callback(self, msg):
-        """Updates PT's current pose."""
         self.pt_pose = msg
-        
+    
     def rt_pose_callback(self, msg):
-        """Updates RT's current pose from `/rt_real_pose`."""
-        self.rt_pose = msg
+        if len(self.rt_positions) >= 4:
+            self.rt_positions.pop(0)
+        self.rt_positions.append((msg.x, msg.y))
         
-    def update_velocity(self, current, desired, dt, max_accel, max_decel):
-        """
-        Gradually adjusts velocity while limiting acceleration and deceleration.
-        """
-        diff = desired - current
-        max_step = max_accel * dt if diff > 0 else max_decel * dt
-        return current + max(min(diff, max_step), -max_step)
+        if len(self.rt_positions) >= 4:
+            self.estimate_circle_params()
     
-    def step_vel(self, desired_vel):
-        """Smoothly adjusts PT's velocity toward the desired velocity."""
-        current_time = time.time()
-        dt = current_time - self.last_time
-        self.last_time = current_time
-        
-        new_vel = Twist()
-        new_vel.linear.x = self.update_velocity(
-            self.current_vel.linear.x, desired_vel.linear.x, dt,
-            self.max_accel_linear, self.max_decel_linear
-        )
-        new_vel.angular.z = self.update_velocity(
-            self.current_vel.angular.z, desired_vel.angular.z, dt,
-            self.max_accel_angular, self.max_decel_angular
-        )
-        
-        self.current_vel = new_vel
-        self.cmd_pub.publish(new_vel)
-    
-    def control_loop(self):
-        """Computes the chase command using intercept prediction."""
-        if self.pt_pose is None or self.rt_pose is None:
+    def estimate_circle_params(self):
+        if len(self.rt_positions) < 4:
             return
         
-        # PT's position
+        points = np.array(self.rt_positions)
+        A = np.c_[2 * points, np.ones(points.shape[0])]
+        b = np.sum(points ** 2, axis=1)        
+        
+        try:
+            center = np.linalg.lstsq(A, b, rcond=None)[0][:2]
+            self.circle_center = tuple(center)
+            self.circle_radius = np.mean([math.dist(center, p) for p in self.rt_positions])
+            self.get_logger().info(f"Estimated Circle: Center=({self.circle_center[0]:.2f}, {self.circle_center[1]:.2f}), Radius={self.circle_radius:.2f}")
+        except:
+            self.get_logger().error("Failed to estimate circle parameters")
+    
+    def predict_rt_position(self, future_time):
+        if not self.circle_center or not self.circle_radius or len(self.rt_positions) < 2:
+            return None
+    
+        x_r, y_r = self.rt_positions[-1]
+        x_c, y_c = self.circle_center
+        angle = math.atan2(y_r - y_c, x_r - x_c)
+        
+        self.rt_speed = math.dist(self.rt_positions[-1], self.rt_positions[-2]) / 5.0
+        angle += self.rt_speed / self.circle_radius * future_time
+        
+        # lead_time = min(10, max(5, self.circle_radius / self.pt_speed))  # Adjust lead time dynamically
+        # lead_angle = angle + (self.rt_speed / self.circle_radius) * lead_time  # Predict ahead
+        return x_c + (self.circle_radius * 0.7) * math.cos(angle), y_c + (self.circle_radius * 0.7) * math.sin(angle) 
+    
+    def control_loop(self):
+        if not self.pt_pose or len(self.rt_positions) < 2:
+            return
+        
         x_p, y_p = self.pt_pose.x, self.pt_pose.y
+        future_rt_pos = self.predict_rt_position(5.0)
+        if not future_rt_pos:
+            return
         
-        # RT's position and motion
-        x_r, y_r = self.rt_pose.x, self.rt_pose.y
-        v_r = self.rt_pose.linear_velocity
-        theta_r = self.rt_pose.theta
+        x_t, y_t = future_rt_pos
+        dx, dy = x_t - x_p, y_t - y_p
+        distance = ((x_t - x_p) ** 2 + (y_t - y_p) ** 2) ** 0.5
         
-        # PT moves at half the speed of RT
-        pt_max_speed = 0.5 * v_r
-        
-        # Compute intercept time T
-        A = v_r**2 - pt_max_speed**2
-        B = 2 * ((x_r - x_p) * v_r * math.cos(theta_r) + (y_r - y_p) * v_r * math.sin(theta_r))
-        C = (x_r - x_p)**2 + (y_r - y_p)**2
-        
-        discriminant = B**2 - 4 * A * C
-        T = 1.0  # Default fallback time
-        if A != 0 and discriminant >= 0:
-            T1 = (-B + math.sqrt(discriminant)) / (2 * A)
-            T2 = (-B - math.sqrt(discriminant)) / (2 * A)
-            candidates = [t for t in (T1, T2) if t > 0]
-            T = min(candidates) if candidates else 1.0
-        
-        # Predict intercept point
-        x_int = x_r + v_r * math.cos(theta_r) * T
-        y_int = y_r + v_r * math.sin(theta_r) * T
-        
-        # Check if PT has caught RT
-        d_rt = math.sqrt((x_r - x_p)**2 + (y_r - y_p)**2)
-        if d_rt <= 3.0:
-            self.get_logger().info("Chase successful PT has chased RT")
-            self.cmd_pub.publish(Twist())  # Stop movement
+        if distance <= 2.0:
+            self.get_logger().info("Chase successful! PT caught RT.")
+            self.cmd_pub.publish(Twist())
             self.control_timer.cancel()
             return
         
-        # Compute steering toward intercept point
-        dx, dy = x_int - x_p, y_int - y_p
         desired_angle = math.atan2(dy, dx)
         angle_error = math.atan2(math.sin(desired_angle - self.pt_pose.theta), math.cos(desired_angle - self.pt_pose.theta))
         
-        # Compute velocity using proportional control
-        distance_to_intercept = math.sqrt(dx**2 + dy**2)
-        desired_linear_vel = min(self.Kp_linear * distance_to_intercept, pt_max_speed)
-        desired_angular_vel = max(min(self.Kp_angular * angle_error, self.max_angular_speed), -self.max_angular_speed)
-        
-        # Publish velocity command
-        desired_twist = Twist()
-        desired_twist.linear.x = desired_linear_vel
-        desired_twist.angular.z = desired_angular_vel
-        
-        self.step_vel(desired_twist)
-        self.get_logger().info(
-            f"Intercept T: {T:.2f}, predicted intercept: ({x_int:.2f}, {y_int:.2f}), "
-            f"PT-RT distance: {d_rt:.2f}"
-        )
+        twist = Twist()
+        twist.linear.x = 1.0
+        twist.angular.z = max(min(self.Kp_angular * angle_error * 1.5, self.max_angular_speed), -self.max_angular_speed)
+
+        self.cmd_pub.publish(twist)
+    
 
 def main(args=None):
+
     rclpy.init(args=args)
     node = PoliceTurtleSlow()
     rclpy.spin(node)

@@ -11,7 +11,7 @@ setup(
             ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
     ],
-    install_requires=['setuptools'],
+    install_requires=['setuptools', 'rclpy', 'geometry_msgs', 'turtlesim', 'turtlesim_msgs'],
     zip_safe=True,
     maintainer='dev',
     maintainer_email='zinzuvadiadev08@gmail.com',
@@ -21,6 +21,7 @@ setup(
     entry_points={
         'console_scripts': [
             'task_6 = task_6.kalman_police_turtle:main',
+            'kalman_filter_node = task_6.Filter:main',
         ],
     },
 )

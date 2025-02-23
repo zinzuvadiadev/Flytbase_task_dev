@@ -1,46 +1,68 @@
 #!/usr/bin/env python3
 """
-This node is publishing a custom circle radius to the topic `/custom_circle_radius`
-Use this for custom radius, need this goal 5 and goal 6
-
+This node drives the turtlesim turtle in a circle and publishes:
+- Velocity commands on `/turtle1/cmd_vel`
+- The current circle radius on `/circle_radius`
 """
 
 import rclpy
-import numpy
-
 from rclpy.node import Node
+from geometry_msgs.msg import Twist
 from std_msgs.msg import Float32
 
-class CustomRadiusPublisher(Node):
-    def __init__(self):
-        super().__init__('custom_radius_publisher')
-        self.publisher_ = self.create_publisher(Float32, '/custom_circle_radius', 10)
-        self.get_logger().info("Custom Radius Publisher started. Enter new radius values.")
 
-    def publish_radius(self, radius):
+class CircleTurtlePublisher(Node):
+    def __init__(self, linear_speed, circle_radius):
+        super().__init__('circle_turtle_publisher')
+
+        # Store user inputs
+        self.linear_speed = linear_speed
+        self.circle_radius = circle_radius
+
+        # Publishers
+        self.cmd_vel_pub = self.create_publisher(Twist, '/turtle1/cmd_vel', 10)
+        self.radius_pub = self.create_publisher(Float32, '/custom_circle_radius', 10)
+
+        # Timer to publish velocity
+        self.cmd_timer = self.create_timer(0.05, self.cmd_vel_callback)
+        # Timer to publish radius
+        self.radius_timer = self.create_timer(2.0, self.publish_radius)
+
+        self.get_logger().info(
+            f"Circle Turtle Publisher started with radius={self.circle_radius}, linear_speed={self.linear_speed}"
+        )
+
+    def cmd_vel_callback(self):
+        """Publishes only linear velocity, no angular velocity."""
+        twist = Twist()
+        twist.linear.x = self.linear_speed
+        twist.angular.z = 0.0  # Not publishing angular velocity
+        self.cmd_vel_pub.publish(twist)
+
+    def publish_radius(self):
+        """Publishes the current radius as a Float32 message."""
         msg = Float32()
-        msg.data = radius
-        self.publisher_.publish(msg)
-        self.get_logger().info(f"Published new radius: {radius}")
+        msg.data = self.circle_radius
+        self.radius_pub.publish(msg)
+        self.get_logger().info(f"Published Radius: {self.circle_radius:.2f}")
+
 
 def main(args=None):
     rclpy.init(args=args)
-    node = CustomRadiusPublisher()
-    try:
-        while rclpy.ok():
-            user_input = input("Enter new circle radius")
-            if user_input.lower() == 'exit':
-                break
-            try:
-                radius = float(user_input)
-                node.publish_radius(radius)
-            except ValueError:
-                node.get_logger().error("Invalid input.")
-    except KeyboardInterrupt:
-        pass
 
+    # Take user input for linear speed and radius
+    try:
+        linear_speed = float(input("Enter linear speed: "))
+        circle_radius = float(input("Enter circle radius: "))
+    except ValueError:
+        print("Invalid input! Please enter numerical values.")
+        return
+
+    node = CircleTurtlePublisher(linear_speed, circle_radius)
+    rclpy.spin(node)
     node.destroy_node()
     rclpy.shutdown()
+
 
 if __name__ == '__main__':
     main()
